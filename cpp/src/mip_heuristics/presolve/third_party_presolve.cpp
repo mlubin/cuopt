@@ -941,6 +941,17 @@ third_party_presolve_status_t third_party_presolve_t<i_t, f_t>::apply_papilo(
       original_to_reduced_map_[original_idx] = static_cast<i_t>(i);
     }
   }
+
+  auto const& row_map = result.postsolve.origrow_mapping;
+  reduced_to_original_row_map_.assign(row_map.begin(), row_map.end());
+  original_to_reduced_row_map_.assign(original_n_cons, -1);
+  for (size_t i = 0; i < reduced_to_original_row_map_.size(); ++i) {
+    auto original_idx = reduced_to_original_row_map_[i];
+    if (original_idx >= 0 &&
+        static_cast<size_t>(original_idx) < original_to_reduced_row_map_.size()) {
+      original_to_reduced_row_map_[original_idx] = static_cast<i_t>(i);
+    }
+  }
   return status;
 }
 
@@ -1026,6 +1037,8 @@ third_party_presolve_t<i_t, f_t>::apply_presolve_from_mps_data(
 {
   presolver_ = presolver;
   maximize_  = mps.get_sense();
+  reduced_to_original_row_map_.clear();
+  original_to_reduced_row_map_.clear();
 
   cuopt_expects(!(category == problem_category_t::MIP &&
                   presolver == cuopt::mathematical_optimization::presolver_t::PSLP),
@@ -1115,6 +1128,8 @@ third_party_presolve_status_t third_party_presolve_t<i_t, f_t>::apply_to_subprob
 {
   const bool dual_postsolve = false;
   presolver_                = cuopt::mathematical_optimization::presolver_t::Papilo;
+  reduced_to_original_row_map_.clear();
+  original_to_reduced_row_map_.clear();
   // build_papilo_problem_mip keeps the objective in minimization sense (user_problem_t carries
   // the direction in obj_scale), so the read-back must not flip signs either.
   maximize_ = false;
@@ -1190,6 +1205,18 @@ third_party_presolve_status_t third_party_presolve_t<i_t, f_t>::apply_to_subprob
     auto original_idx = reduced_to_original_map_[i];
     if (original_idx >= 0 && original_idx < original_to_reduced_map_.size()) {
       original_to_reduced_map_[original_idx] = i;
+    }
+  }
+
+  // Row maps for postsolve (reduced -> original and its inverse).
+  auto const& row_map = result.postsolve.origrow_mapping;
+  reduced_to_original_row_map_.assign(row_map.begin(), row_map.end());
+  original_to_reduced_row_map_.assign(orig_rows, -1);
+  for (size_t i = 0; i < reduced_to_original_row_map_.size(); ++i) {
+    auto original_idx = reduced_to_original_row_map_[i];
+    if (original_idx >= 0 &&
+        static_cast<size_t>(original_idx) < original_to_reduced_row_map_.size()) {
+      original_to_reduced_row_map_[original_idx] = static_cast<i_t>(i);
     }
   }
 

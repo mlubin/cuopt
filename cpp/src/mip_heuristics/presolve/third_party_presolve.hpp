@@ -162,6 +162,16 @@ class third_party_presolve_t {
                                   const std::vector<i_t>& A_offsets) const;
   const std::vector<i_t>& get_reduced_to_original_map() const { return reduced_to_original_map_; }
   const std::vector<i_t>& get_original_to_reduced_map() const { return original_to_reduced_map_; }
+  // PaPILO survivor identity only: a mapped row may have changed coefficients or bounds, and this
+  // does not expose the reduction operation or every row involved in a parallel-row reduction.
+  const std::vector<i_t>& get_reduced_to_original_row_map() const
+  {
+    return reduced_to_original_row_map_;
+  }
+  const std::vector<i_t>& get_original_to_reduced_row_map() const
+  {
+    return original_to_reduced_row_map_;
+  }
 
   const std::vector<f_t>& get_original_objective_coefficients() const
   {
@@ -212,6 +222,8 @@ class third_party_presolve_t {
 
   std::vector<i_t> reduced_to_original_map_{};
   std::vector<i_t> original_to_reduced_map_{};
+  std::vector<i_t> reduced_to_original_row_map_{};
+  std::vector<i_t> original_to_reduced_row_map_{};
 
   std::vector<f_t> original_objective_coefficients_{};
   f_t original_objective_offset_{0};

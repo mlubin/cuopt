@@ -5,17 +5,14 @@
  */
 /* clang-format on */
 
-#include <cuopt/mathematical_optimization/cpu_optimization_problem.hpp>
 #include <cuopt/mathematical_optimization/io/mps_data_model.hpp>
 #include <cuopt/mathematical_optimization/io/parser.hpp>
-#include <cuopt/mathematical_optimization/optimization_problem_interface.hpp>
-#include <cuopt/mathematical_optimization/optimization_problem_utils.hpp>
 #include <cuopt/mathematical_optimization/utilities/internals.hpp>
-#include <mip_heuristics/presolve/conflict_graph/clique_table.cuh>
 #include <mip_heuristics/presolve/third_party_presolve.hpp>
-#include <mip_heuristics/problem/problem.cuh>
-#include <pdlp/translate.hpp>
-#include <utilities/timer.hpp>
+
+#include "mps_conflict_graph.hpp"
+#include "mps_lp_overlay.hpp"
+#include "mps_structure_analysis.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +22,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -32,13 +30,22 @@
 #include <utility>
 #include <vector>
 
-// The internal problem translation headers require this example to be compiled by NVCC.
 namespace {
 
 using index_t           = int;
 using value_t           = double;
 using model_t           = cuopt::mathematical_optimization::io::mps_data_model_t<index_t, value_t>;
 using presolve_status_t = cuopt::mathematical_optimization::mip::third_party_presolve_status_t;
+namespace structure     = cuopt::mathematical_optimization::examples;
+
+struct driver_options_t {
+  std::string model_path;
+  bool fixed_format{};
+  structure::analysis_level_t analysis_level{structure::analysis_level_t::basic};
+  bool lp_overlay{};
+  bool objective_erased_lp{};
+  std::optional<std::string> json_path;
+};
 
 class disjoint_set_t {
  public:
@@ -91,20 +98,6 @@ struct structure_t {
   std::vector<index_t> row_degrees;
   std::vector<index_t> column_degrees;
   component_summary_t components;
-};
-
-struct conflict_graph_summary_t {
-  std::size_t binary_variables{};
-  std::size_t base_cliques{};
-  std::size_t clique_extensions{};
-  std::size_t largest_clique{};
-  double mean_clique_size{};
-  std::size_t row_derived_edges{};
-  std::size_t complement_edges{};
-  std::size_t components{};
-  std::size_t largest_component{};
-  std::vector<index_t> literal_degrees;
-  std::vector<index_t> literal_ids;
 };
 
 degree_summary_t summarize_degrees(const std::vector<index_t>& degrees)
@@ -173,164 +166,6 @@ structure_t inspect_matrix(const model_t& model)
     }
   }
   return structure;
-}
-
-bool is_binary_column(const model_t& model, std::size_t column)
-{
-  const auto& types = model.get_variable_types();
-  const auto& lower = model.get_variable_lower_bounds();
-  const auto& upper = model.get_variable_upper_bounds();
-  return column < types.size() && column < lower.size() && column < upper.size() &&
-         (types[column] == 'I' || types[column] == 'B') && lower[column] == 0.0 &&
-         upper[column] == 1.0;
-}
-
-conflict_graph_summary_t inspect_conflict_graph(const model_t& model)
-{
-  conflict_graph_summary_t summary;
-  const auto n_columns = model.get_n_variables();
-  std::vector<index_t> literal_to_local(static_cast<std::size_t>(2 * n_columns), -1);
-  for (index_t column = 0; column < n_columns; ++column) {
-    if (!is_binary_column(model, static_cast<std::size_t>(column))) { continue; }
-    literal_to_local[column] = static_cast<index_t>(summary.literal_ids.size());
-    summary.literal_ids.push_back(column);
-    literal_to_local[column + n_columns] = static_cast<index_t>(summary.literal_ids.size());
-    summary.literal_ids.push_back(column + n_columns);
-    ++summary.binary_variables;
-  }
-  if (summary.binary_variables == 0) { return summary; }
-
-  cuopt::mathematical_optimization::cpu_optimization_problem_t<index_t, value_t> cpu_problem;
-  cuopt::mathematical_optimization::populate_from_mps_data_model(&cpu_problem, model);
-  auto user_problem =
-    cuopt::mathematical_optimization::cuopt_problem_to_user_problem<index_t, value_t>(nullptr,
-                                                                                      cpu_problem);
-
-  cuopt::mathematical_optimization::mip::clique_config_t config;
-  cuopt::mathematical_optimization::mip::clique_table_t<index_t, value_t> clique_table(
-    2 * n_columns, config.min_clique_size, config.max_clique_size_for_extension);
-  using settings_t = cuopt::mathematical_optimization::mip_solver_settings_t<index_t, value_t>;
-  cuopt::timer_t timer(std::numeric_limits<double>::infinity());
-  cuopt::mathematical_optimization::mip::build_clique_table(
-    user_problem,
-    clique_table,
-    typename settings_t::tolerances_t{},
-    false,  // Preserve cliques rather than demoting small ones to pairwise storage.
-    true,
-    timer);
-
-  summary.base_cliques           = clique_table.first.size();
-  summary.clique_extensions      = clique_table.addtl_cliques.size();
-  std::size_t clique_memberships = 0;
-  for (const auto& clique : clique_table.first) {
-    summary.largest_clique = std::max(summary.largest_clique, clique.size());
-    clique_memberships += clique.size();
-  }
-  if (summary.base_cliques != 0) {
-    summary.mean_clique_size =
-      static_cast<double>(clique_memberships) / static_cast<double>(summary.base_cliques);
-  }
-
-  summary.literal_degrees.resize(summary.literal_ids.size(), 0);
-  disjoint_set_t components(summary.literal_ids.size());
-  for (std::size_t local_literal = 0; local_literal < summary.literal_ids.size(); ++local_literal) {
-    const auto literal   = summary.literal_ids[local_literal];
-    const auto adjacency = clique_table.get_adj_set_of_var(literal);
-    for (const auto adjacent_literal : adjacency) {
-      if (adjacent_literal < 0 ||
-          adjacent_literal >= static_cast<index_t>(literal_to_local.size())) {
-        continue;
-      }
-      const auto adjacent_local = literal_to_local[adjacent_literal];
-      if (adjacent_local < 0) { continue; }
-      ++summary.literal_degrees[local_literal];
-      if (local_literal >= static_cast<std::size_t>(adjacent_local)) { continue; }
-
-      components.unite(local_literal, static_cast<std::size_t>(adjacent_local));
-      const auto complement = literal < n_columns ? literal + n_columns : literal - n_columns;
-      if (adjacent_literal == complement) {
-        ++summary.complement_edges;
-      } else {
-        ++summary.row_derived_edges;
-      }
-    }
-  }
-
-  std::unordered_map<std::size_t, std::size_t> component_sizes;
-  for (std::size_t literal = 0; literal < summary.literal_ids.size(); ++literal) {
-    auto& size = component_sizes[components.find(literal)];
-    ++size;
-    summary.largest_component = std::max(summary.largest_component, size);
-  }
-  summary.components = component_sizes.size();
-  return summary;
-}
-
-std::string literal_name(index_t literal, const model_t& model)
-{
-  const auto n_columns = model.get_n_variables();
-  const auto column    = literal < n_columns ? literal : literal - n_columns;
-  const auto& names    = model.get_variable_names();
-  const auto name      = column < static_cast<index_t>(names.size()) && !names[column].empty()
-                           ? names[column]
-                           : "x[" + std::to_string(column) + "]";
-  return name + (literal < n_columns ? "=1" : "=0");
-}
-
-void print_conflict_graph_summary(const model_t& model)
-{
-  if (model.has_quadratic_objective() || model.has_quadratic_constraints()) {
-    std::cout << "  row-derived conflict graph:\n"
-              << "    unavailable for quadratic models in this example\n";
-    return;
-  }
-  const auto summary = inspect_conflict_graph(model);
-  std::cout << "  row-derived conflict graph:\n";
-  if (summary.binary_variables == 0) {
-    std::cout << "    not applicable (no binary variables)\n";
-    return;
-  }
-
-  const auto total_edges    = summary.row_derived_edges + summary.complement_edges;
-  const auto degree_summary = summarize_degrees(summary.literal_degrees);
-  std::cout << "    binary variables: " << summary.binary_variables << " ("
-            << summary.literal_ids.size() << " literal vertices)\n";
-  std::cout << "    base cliques: " << summary.base_cliques
-            << ", extensions: " << summary.clique_extensions << ", mean base size=" << std::fixed
-            << std::setprecision(2) << summary.mean_clique_size
-            << ", largest=" << summary.largest_clique << '\n';
-  std::cout << "    edges: row-derived=" << summary.row_derived_edges
-            << ", literal-complement=" << summary.complement_edges << ", total=" << total_edges
-            << '\n';
-  std::cout << "    literal degree (including complement): min=" << degree_summary.minimum
-            << ", mean=" << std::fixed << std::setprecision(2) << degree_summary.mean
-            << ", max=" << degree_summary.maximum << '\n';
-  std::cout << "    connected components: " << summary.components
-            << " (largest: " << summary.largest_component << " literals)\n";
-
-  if (summary.row_derived_edges == 0) { return; }
-  constexpr std::size_t limit = 5;
-  std::vector<std::size_t> order;
-  order.reserve(summary.literal_ids.size());
-  for (std::size_t literal = 0; literal < summary.literal_ids.size(); ++literal) {
-    if (summary.literal_degrees[literal] > 1) { order.push_back(literal); }
-  }
-  const auto count = std::min(limit, order.size());
-  std::partial_sort(order.begin(),
-                    order.begin() + static_cast<std::ptrdiff_t>(count),
-                    order.end(),
-                    [&summary](std::size_t lhs, std::size_t rhs) {
-                      if (summary.literal_degrees[lhs] != summary.literal_degrees[rhs]) {
-                        return summary.literal_degrees[lhs] > summary.literal_degrees[rhs];
-                      }
-                      return summary.literal_ids[lhs] < summary.literal_ids[rhs];
-                    });
-  std::cout << "    most-conflicted literals:\n";
-  for (std::size_t rank = 0; rank < count; ++rank) {
-    const auto local = order[rank];
-    std::cout << "      " << literal_name(summary.literal_ids[local], model) << ": degree "
-              << summary.literal_degrees[local] << '\n';
-  }
 }
 
 std::string_view status_name(presolve_status_t status)
@@ -402,6 +237,7 @@ void print_model_summary(std::string_view heading, const model_t& model)
   std::size_t integer         = 0;
   std::size_t semi_continuous = 0;
   std::size_t binary          = 0;
+  std::size_t unfixed_binary  = 0;
   const auto& variable_types  = model.get_variable_types();
   const auto& variable_lower  = model.get_variable_lower_bounds();
   const auto& variable_upper  = model.get_variable_upper_bounds();
@@ -410,8 +246,11 @@ void print_model_summary(std::string_view heading, const model_t& model)
     if (type == 'I' || type == 'B') {
       ++integer;
       if (column < variable_lower.size() && column < variable_upper.size() &&
-          variable_lower[column] == 0.0 && variable_upper[column] == 1.0) {
+          (variable_lower[column] == 0.0 || variable_lower[column] == 1.0) &&
+          (variable_upper[column] == 0.0 || variable_upper[column] == 1.0) &&
+          variable_lower[column] <= variable_upper[column]) {
         ++binary;
+        if (variable_lower[column] == 0.0 && variable_upper[column] == 1.0) { ++unfixed_binary; }
       }
     } else if (type == 'S') {
       ++semi_continuous;
@@ -481,7 +320,8 @@ void print_model_summary(std::string_view heading, const model_t& model)
   std::cout << "  objective: " << (model.get_sense() ? "maximize" : "minimize") << ", "
             << objective_nonzeros << " nonzero coefficients\n";
   std::cout << "  variables: continuous=" << continuous << ", integer=" << integer
-            << " (binary=" << binary << "), semi-continuous=" << semi_continuous << '\n';
+            << " (binary-domain=" << binary << ", unfixed-binary=" << unfixed_binary
+            << "), semi-continuous=" << semi_continuous << '\n';
   std::cout << "  variable bounds: fixed=" << fixed << ", free=" << free
             << ", lower-only=" << lower_only << ", upper-only=" << upper_only << ", boxed=" << boxed
             << '\n';
@@ -498,7 +338,7 @@ void print_model_summary(std::string_view heading, const model_t& model)
   std::cout << '\n';
   print_densest("rows", structure.row_degrees, model.get_row_names());
   print_densest("columns", structure.column_degrees, model.get_variable_names());
-  print_conflict_graph_summary(model);
+  structure::print_conflict_graph_summary(model);
 }
 
 void print_reduction(std::string_view label, std::size_t before, std::size_t after)
@@ -524,31 +364,105 @@ bool has_semi_continuous_variables(const model_t& model)
 
 void print_usage(const char* executable)
 {
-  std::cerr << "Usage: " << executable << " <model.mps> [--fixed]\n";
+  std::cerr << "Usage: " << executable
+            << " <model.mps> [--fixed] [--level basic|lp|symmetry]..."
+               " [--objective-erased-lp] [--json <path>]\n";
+}
+
+driver_options_t parse_options(int argc, char** argv)
+{
+  if (argc < 2) { throw std::invalid_argument("missing MPS path"); }
+  driver_options_t options;
+  options.model_path = argv[1];
+  for (int argument = 2; argument < argc; ++argument) {
+    const std::string_view value = argv[argument];
+    if (value == "--fixed") {
+      options.fixed_format = true;
+    } else if (value == "--json") {
+      if (++argument == argc) { throw std::invalid_argument("--json requires an output path"); }
+      options.json_path = argv[argument];
+    } else if (value == "--level") {
+      if (++argument == argc) { throw std::invalid_argument("--level requires a value"); }
+      const std::string_view level = argv[argument];
+      if (level == "basic") {
+        continue;
+      } else if (level == "lp") {
+        options.lp_overlay = true;
+      } else if (level == "symmetry") {
+        options.analysis_level = structure::analysis_level_t::symmetry;
+      } else if (level == "probing") {
+        throw std::invalid_argument(
+          "probing diagnostics are not exposed safely by the current internal API");
+      } else {
+        throw std::invalid_argument("unknown analysis level: " + std::string(level));
+      }
+    } else if (value == "--objective-erased-lp") {
+      options.objective_erased_lp = true;
+      options.lp_overlay          = true;
+    } else {
+      throw std::invalid_argument("unknown option: " + std::string(value));
+    }
+  }
+  return options;
+}
+
+void restore_reduced_column_names(model_t& reduced,
+                                  const model_t& original,
+                                  const std::vector<index_t>& reduced_to_original)
+{
+  if (!reduced.get_variable_names().empty() || original.get_variable_names().empty()) { return; }
+  std::vector<std::string> names(reduced.get_n_variables());
+  for (index_t column = 0; column < reduced.get_n_variables(); ++column) {
+    const auto original_column = reduced_to_original[column];
+    if (original_column >= 0 &&
+        original_column < static_cast<index_t>(original.get_variable_names().size())) {
+      names[column] = original.get_variable_names()[original_column];
+    }
+  }
+  reduced.set_variable_names(names);
+}
+
+void restore_reduced_row_names(model_t& reduced,
+                               const model_t& original,
+                               const std::vector<index_t>& reduced_to_original)
+{
+  if (!reduced.get_row_names().empty() || original.get_row_names().empty()) { return; }
+  std::vector<std::string> names(reduced.get_n_constraints());
+  for (index_t row = 0; row < reduced.get_n_constraints(); ++row) {
+    const auto original_row = reduced_to_original[row];
+    if (original_row >= 0 && original_row < static_cast<index_t>(original.get_row_names().size())) {
+      names[row] = original.get_row_names()[original_row];
+    }
+  }
+  reduced.set_row_names(names);
 }
 
 }  // namespace
 
 int main(int argc, char** argv)
 {
-  if (argc < 2 || argc > 3) {
-    print_usage(argv[0]);
-    return 1;
-  }
-
-  bool fixed_format = false;
-  if (argc == 3) {
-    if (std::string_view(argv[2]) != "--fixed") {
-      print_usage(argv[0]);
-      return 1;
-    }
-    fixed_format = true;
-  }
-
   try {
-    auto original =
-      cuopt::mathematical_optimization::io::read_mps<index_t, value_t>(argv[1], fixed_format);
+    const auto options = parse_options(argc, argv);
+    auto original      = cuopt::mathematical_optimization::io::read_mps<index_t, value_t>(
+      options.model_path, options.fixed_format);
+    const auto original_analysis =
+      structure::analyze_structure(original, "original", {}, options.analysis_level);
     print_model_summary("Original model", original);
+    structure::print_special_structure_summary(original, original_analysis);
+
+    std::optional<structure::lp_overlay_summary_t> source_lp;
+    std::optional<structure::lp_overlay_summary_t> objective_erased_lp;
+    if (options.lp_overlay) {
+      structure::lp_overlay_options_t lp_options;
+      source_lp = structure::analyze_root_lp_overlay(original, original_analysis, lp_options);
+      structure::print_root_lp_overlay_summary(*source_lp);
+      if (options.objective_erased_lp) {
+        lp_options.objective_mode = structure::lp_objective_mode_t::erased;
+        objective_erased_lp =
+          structure::analyze_root_lp_overlay(original, original_analysis, lp_options);
+        structure::print_root_lp_overlay_summary(*objective_erased_lp);
+      }
+    }
 
     if (original.has_quadratic_objective() || original.has_quadratic_constraints()) {
       throw std::invalid_argument(
@@ -576,9 +490,30 @@ int main(int argc, char** argv)
       1);
 
     std::cout << "\nPresolve status: " << status_name(result.status) << '\n';
-    if (is_terminal_without_model(result.status)) { return 0; }
+    if (is_terminal_without_model(result.status)) {
+      if (options.json_path) {
+        structure::write_structure_json(*options.json_path,
+                                        original,
+                                        original_analysis,
+                                        nullptr,
+                                        nullptr,
+                                        nullptr,
+                                        source_lp ? &*source_lp : nullptr,
+                                        objective_erased_lp ? &*objective_erased_lp : nullptr);
+      }
+      return 0;
+    }
 
+    restore_reduced_column_names(result.reduced_problem, original, result.reduced_to_original_map);
+    const auto& reduced_to_original_rows = presolver.get_reduced_to_original_row_map();
+    restore_reduced_row_names(result.reduced_problem, original, reduced_to_original_rows);
+    const auto reduced_analysis = structure::analyze_structure(result.reduced_problem,
+                                                               "presolved",
+                                                               result.reduced_to_original_map,
+                                                               options.analysis_level,
+                                                               reduced_to_original_rows);
     print_model_summary("Presolved model", result.reduced_problem);
+    structure::print_special_structure_summary(result.reduced_problem, reduced_analysis);
     std::cout << "\nPresolve reduction\n";
     print_reduction("rows",
                     static_cast<std::size_t>(original.get_n_constraints()),
@@ -592,7 +527,27 @@ int main(int argc, char** argv)
     std::cout << "  implied integer columns in reduced model: "
               << result.implied_integer_indices.size() << '\n';
     std::cout << "  surviving column mappings: " << result.reduced_to_original_map.size() << '\n';
+    std::cout << "  surviving row mappings: " << reduced_to_original_rows.size() << '\n';
+    const auto structure_delta =
+      structure::analyze_presolve_structure_delta(original_analysis,
+                                                  reduced_analysis,
+                                                  result.reduced_to_original_map,
+                                                  result.original_to_reduced_map,
+                                                  result.implied_integer_indices);
+    structure::print_presolve_structure_delta(structure_delta);
+    if (options.json_path) {
+      structure::write_structure_json(*options.json_path,
+                                      original,
+                                      original_analysis,
+                                      &result.reduced_problem,
+                                      &reduced_analysis,
+                                      &structure_delta,
+                                      source_lp ? &*source_lp : nullptr,
+                                      objective_erased_lp ? &*objective_erased_lp : nullptr);
+      std::cout << "\nWrote structural detail to " << *options.json_path << '\n';
+    }
   } catch (const std::exception& error) {
+    print_usage(argv[0]);
     std::cerr << "Error: " << error.what() << '\n';
     return 1;
   }
