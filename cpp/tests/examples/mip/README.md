@@ -7,6 +7,10 @@
 3. applies cuOpt's host-side PaPILO presolver; and
 4. repeats the analysis on the reduced formulation and reports structural deltas.
 
+Agents extending the example should start with the
+[research breadcrumbs](#research-breadcrumbs), which map each research question
+to a code pickup point and a common provenance/test contract.
+
 The summary includes variable and constraint classes, bound classes, row and
 column degree statistics, the densest named rows and columns, connected
 components in the row-column bipartite graph, and the row-derived conflict
@@ -125,3 +129,63 @@ PaPILO presolve does not accept quadratic objectives or quadratic constraints,
 and the host-only path does not perform cuOpt's GPU-side semi-continuous
 reformulation. The driver reports a clear error for these inputs rather than
 silently inspecting a different model.
+
+## Research breadcrumbs
+
+Potential extensions are marked in the source as
+`RESEARCH-BREADCRUMB(mps-structure/<slug>)`. To find every pickup point, run:
+
+```bash
+rg 'RESEARCH-BREADCRUMB\(mps-structure/' cpp/tests/examples/mip
+```
+
+The bracketed tier on each marker describes its expected scope:
+
+- `driver-local`: implementable entirely in this example;
+- `internal-api`: needs a typed cuOpt-internal result or additional provenance;
+- `solver-invasive`: needs solver instrumentation or an isolated execution mode.
+
+The breadcrumbs are research questions, not promises that a detector is sound
+for every formulation. An implementation is complete only when it:
+
+1. returns a typed record rather than printing while it detects;
+2. feeds bounded human output and the JSON sidecar from that same record;
+3. identifies the model stage and preserves stage-local plus available original
+   row/column IDs, row side, detector, and source witnesses;
+4. records tolerances, limits, elapsed work, and `complete: false` whenever a
+   cap or timeout can change the result;
+5. distinguishes a candidate heuristic from a checked certificate;
+6. adds deterministic tests covering a positive case, a near miss, relevant
+   polarity/scaling, provenance, and any budget boundary; and
+7. documents the exact mathematical definition without inferring intent from
+   MPS names.
+
+When pair expansion can be quadratic, retain the complete relation as a
+hyperedge and cap only its pairwise projection. When an analysis invokes a
+mutating solver subsystem, run it on an isolated copy and return an explicit
+status instead of changing the model used by other detectors.
+
+| Breadcrumb | Tier | Research question and natural pickup point |
+|---|---|---|
+| `safe-json-sidecar` | driver-local | Reject an output equivalent to the MPS input and commit a completed sidecar atomically. Start at `write_structure_json()` and the option handling in `mps_presolve_structure.cpp`. |
+| `run-manifest` | driver-local | Record input identity, effective detector/presolve/LP settings, statuses, timings, caps, and the cuOpt build identity. Extend the top-level JSON document rather than individual stage detectors. |
+| `report-detail-levels` | driver-local | Add `summary`, `relations`, and `full` serialization tiers plus a collection-oriented JSONL/CSV summary. Keep detection independent of presentation. |
+| `typed-conflict-report` | driver-local | Replace the print-only conflict inspection with a typed, budgeted result shared by terminal and JSON renderers. Preserve clique hyperedges and cap only pair materialization. |
+| `conflict-row-provenance` | internal-api | Retain originating row, row side, and extraction rule while `build_clique_table()` creates a clique. Do not reconstruct provenance from the final adjacency. |
+| `family-hypergraphs` | driver-local | Give packing, covering, GUB, cardinality, and knapsack groups the overlap/component/interface summaries currently available only for exact-one groups. |
+| `activation-graph` | driver-local | Build the binary-controller-to-target graph from `variable_bound_t`, including fan-in/out, shared targets, encoded bounds, and bound-quality ratios. Do not assign semantic labels to controllers. |
+| `implication-closure` | driver-local | Analyze the row-certified literal implication graph: SCCs, equivalence classes, forced/contradictory literals, and bounded closure or transitive reduction. Keep static and future probing arcs separate. |
+| `matrix-separators` | driver-local | Add articulation rows/columns, bridges, biconnected components, high-degree hubs, and explicit block-angular interface scores to `decomposition_t`. |
+| `variable-role-taxonomy` | driver-local | Record non-exclusive roles such as group member, controller, controlled response, mediator, interface, affine pivot, and repair candidate, with coverage and overlap summaries. |
+| `network-certificate` | driver-local | Replace the current flow-like candidate with a checked signed-incidence/network certificate, and expose affine reconstruction expressions and dependency order separately. |
+| `numerical-certificates` | driver-local | Retain the rows/columns behind aggregate numerical warnings, including normalized residuals and decimal-scaling admission evidence. |
+| `refinement-stabilization` | driver-local | Refine until stable or a configured cap, report whether stabilization occurred, and expose the cap. Rename the user-facing mode from symmetry to refinement while retaining a compatibility alias if needed. |
+| `automorphism-orbits` | internal-api | Add guarded DejaVu orbit diagnostics only after graph construction and unfiltered diagnostic results are exposed separately from solver exploitability thresholds. Validate exported generators. |
+| `lp-structure-overlays` | driver-local | Analyze original and presolved LP relaxations, fractional-block subgraphs, active interfaces, objective localization, activation slack, and solution-dependent dual-weighted coupling. |
+| `presolve-lineage` | internal-api | Expose ordered fixed/substituted/parallel-column records from PaPILO postsolve storage. Survivor maps alone cannot identify a reduction operation or all source rows. |
+| `cut-aware-root-state` | solver-invasive | Add a dedicated root-cut observer and an explicit stop after the cut loop. A tree node limit is not a root-only diagnostic mode. |
+| `probing-overlay` | solver-invasive | First create an immutable, copy-safe probing snapshot that retains infeasible probes, continuous and integer implications, reasons, budgets, and completeness. The current mutating cache is not a reporting API. |
+
+Do not add a detector/plugin registry until multiple independently implemented
+extensions demonstrate a common lifecycle that the existing
+`model_analysis_t` pipeline cannot express cleanly.

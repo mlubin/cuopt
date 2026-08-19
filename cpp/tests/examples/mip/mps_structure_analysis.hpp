@@ -55,11 +55,18 @@ struct row_group_t {
   bool has_upper_capacity{};
 };
 
+// RESEARCH-BREADCRUMB(mps-structure/family-hypergraphs) [driver-local]
+// Generalize the exact-one overlap and projection machinery from these row-certified groups; see
+// the Research breadcrumbs section in README.md for the shared output and test contract.
+
 struct implication_t {
   structure_index_t row{};
   literal_t antecedent;
   literal_t consequent;
 };
+
+// RESEARCH-BREADCRUMB(mps-structure/implication-closure) [driver-local]
+// Keep row-certified arcs distinct from any future probing arcs, and make capped closure explicit.
 
 struct variable_bound_t {
   structure_index_t row{};
@@ -70,6 +77,9 @@ struct variable_bound_t {
   double bound_when_one{};
   bool activation{};
 };
+
+// RESEARCH-BREADCRUMB(mps-structure/activation-graph) [driver-local]
+// Build controller/target summaries from these source-row records without inferring model intent.
 
 struct affine_definition_t {
   structure_index_t row{};
@@ -131,6 +141,9 @@ struct decomposition_t {
   std::map<std::string, std::vector<structure_index_t>> repeated_component_classes;
 };
 
+// RESEARCH-BREADCRUMB(mps-structure/matrix-separators) [driver-local]
+// Add certified articulation/bridge results and bounded separator scores to this typed report.
+
 struct duplicate_class_t {
   std::string fingerprint;
   std::vector<structure_index_t> members;
@@ -172,6 +185,9 @@ struct numerical_summary_t {
   std::size_t rows_not_decimal_scalable{};
 };
 
+// RESEARCH-BREADCRUMB(mps-structure/numerical-certificates) [driver-local]
+// Retain stable row/column evidence and normalized admission residuals behind aggregate warnings.
+
 struct repair_summary_t {
   std::vector<structure_index_t> monotone_increase_columns;
   std::vector<structure_index_t> monotone_decrease_columns;
@@ -181,6 +197,15 @@ struct repair_summary_t {
   std::vector<component_t> flow_equality_components;
 };
 
+// RESEARCH-BREADCRUMB(mps-structure/network-certificate) [driver-local]
+// Keep flow-like candidates separate from checked signed-incidence certificates and affine DAGs.
+
+// RESEARCH-BREADCRUMB(mps-structure/variable-role-taxonomy) [driver-local]
+// Add non-exclusive variable roles here so detectors, human output, and JSON share one definition.
+
+// Detector extension contract: add typed results here, then make bounded human and JSON renderers
+// consume the same records. Preserve stage/original identity, provenance, limits, and completeness
+// as specified in the Research breadcrumbs section of README.md.
 struct model_analysis_t {
   std::string scope;
   analysis_level_t level{analysis_level_t::basic};

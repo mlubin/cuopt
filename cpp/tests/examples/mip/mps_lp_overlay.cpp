@@ -535,6 +535,9 @@ lp_overlay_summary_t analyze_root_lp_overlay(const structure_model_t& model,
                                              const model_analysis_t& analysis,
                                              const lp_overlay_options_t& options)
 {
+  // RESEARCH-BREADCRUMB(mps-structure/cut-aware-root-state) [solver-invasive]
+  // This function is an LP relaxation with no cuts. A cut-aware mode needs a dedicated root
+  // observer and explicit post-cut stop; a tree node limit does not provide that contract.
   lp_overlay_summary_t summary;
   summary.objective_mode     = options.objective_mode;
   summary.time_limit_seconds = options.time_limit_seconds;

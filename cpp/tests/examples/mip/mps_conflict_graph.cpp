@@ -133,6 +133,10 @@ conflict_graph_summary_t inspect_conflict_graph(const model_t& model)
     2 * n_columns, config.min_clique_size, config.max_clique_size_for_extension);
   using settings_t = mip_solver_settings_t<index_t, value_t>;
   cuopt::timer_t timer(std::numeric_limits<double>::infinity());
+
+  // RESEARCH-BREADCRUMB(mps-structure/conflict-row-provenance) [internal-api]
+  // Retain the source row, row side, and extraction rule while cliques are built. The published
+  // clique table has already discarded that information, so adjacency cannot recover it later.
   mip::build_clique_table(
     user_problem, clique_table, typename settings_t::tolerances_t{}, false, true, timer);
 

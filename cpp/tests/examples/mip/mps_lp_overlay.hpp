@@ -153,6 +153,10 @@ struct lp_exact_one_summary_t {
   lp_scalar_distribution_t margin;
 };
 
+// RESEARCH-BREADCRUMB(mps-structure/lp-structure-overlays) [driver-local]
+// Extend the typed LP result with stage-local active interfaces, fractional-block subgraphs,
+// objective localization, and clearly solution-dependent dual-weighted relations.
+
 struct lp_overlay_summary_t {
   bool attempted{};
   bool has_optimal_solution{};

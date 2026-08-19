@@ -990,6 +990,9 @@ decomposition_t build_decomposition(const structure_model_t& model,
 
 void analyze_decompositions(const structure_model_t& model, model_analysis_t& analysis)
 {
+  // RESEARCH-BREADCRUMB(mps-structure/matrix-separators) [driver-local]
+  // Reuse the incidence views here for articulation rows/columns and biconnected components; keep
+  // any heuristic partition score separate from graph-theoretic certificates.
   const auto n_rows    = model.get_n_constraints();
   const auto n_columns = model.get_n_variables();
   std::vector<bool> integer_columns(n_columns, false);
@@ -1090,6 +1093,9 @@ model_analysis_t analyze_structure(const structure_model_t& model,
     detect_binary_implications(model, row, analysis, record);
     detect_variable_bounds(model, row, analysis, record);
     detect_affine_definition(model, row, analysis, record);
+
+    // New per-row detectors belong above this fallback. Post-scan graph or component analyses
+    // belong with the typed aggregation calls below; see the Research breadcrumbs in README.md.
     if (record.families.empty()) { add_family(analysis, record, "general_linear"); }
     analysis.rows.push_back(std::move(record));
   }
@@ -1178,6 +1184,9 @@ presolve_structure_delta_t analyze_presolve_structure_delta(
   const std::vector<structure_index_t>& original_to_reduced,
   const std::vector<structure_index_t>& implied_integer_columns)
 {
+  // RESEARCH-BREADCRUMB(mps-structure/presolve-lineage) [internal-api]
+  // Survivor maps support identity matching only. Consume ordered PaPILO postsolve records before
+  // labeling an eliminated column fixed, substituted, or aggregated; never infer the operation.
   presolve_structure_delta_t delta;
   delta.row_domain_net_changes = net_changes(original.row_domain_counts, reduced.row_domain_counts);
   delta.row_family_net_changes = net_changes(original.row_family_counts, reduced.row_family_counts);
@@ -1619,6 +1628,9 @@ std::map<std::size_t, std::size_t> color_class_histogram(
 
 void analyze_refinement(const structure_model_t& model, model_analysis_t& analysis)
 {
+  // RESEARCH-BREADCRUMB(mps-structure/refinement-stabilization) [driver-local]
+  // Iterate to stability or a reported cap. These color classes are candidates, not automorphism
+  // or isomorphism certificates; actual orbits have a separate breadcrumb in the driver.
   const auto columns = build_columns(model);
   std::vector<std::string> exact_row_keys;
   std::vector<std::string> normalized_row_keys;

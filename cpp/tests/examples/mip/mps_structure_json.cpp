@@ -1419,6 +1419,13 @@ void write_structure_json(const std::string& path,
                           const lp_overlay_summary_t* source_lp,
                           const lp_overlay_summary_t* objective_erased_lp)
 {
+  // RESEARCH-BREADCRUMB(mps-structure/report-detail-levels) [driver-local]
+  // Let a typed render policy choose summary, relation, or full sections without rerunning any
+  // detector. Keep schema versioning and completeness semantics identical across detail levels.
+
+  // RESEARCH-BREADCRUMB(mps-structure/safe-json-sidecar) [driver-local]
+  // Write to a same-directory temporary file and rename only after writer.complete() and stream
+  // checks succeed. Input/output equivalence must already have been rejected by the driver.
   if ((reduced_model == nullptr) != (reduced == nullptr)) {
     throw std::invalid_argument("reduced model and analysis must either both be present or absent");
   }

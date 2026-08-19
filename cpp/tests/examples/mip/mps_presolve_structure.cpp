@@ -47,6 +47,10 @@ struct driver_options_t {
   std::optional<std::string> json_path;
 };
 
+// RESEARCH-BREADCRUMB(mps-structure/report-detail-levels) [driver-local]
+// Add orthogonal stage/detail/resource controls here and serialize their effective values in the
+// run manifest. Detection must remain independent of human, JSON, and collection renderers.
+
 class disjoint_set_t {
  public:
   explicit disjoint_set_t(std::size_t size) : parent_(size), rank_(size, 0)
@@ -390,7 +394,14 @@ driver_options_t parse_options(int argc, char** argv)
         options.lp_overlay = true;
       } else if (level == "symmetry") {
         options.analysis_level = structure::analysis_level_t::symmetry;
+
+        // RESEARCH-BREADCRUMB(mps-structure/automorphism-orbits) [internal-api]
+        // The current mode is deterministic color refinement. Add actual orbits only through a
+        // guarded diagnostic API that returns and validates unfiltered generators.
       } else if (level == "probing") {
+        // RESEARCH-BREADCRUMB(mps-structure/probing-overlay) [solver-invasive]
+        // Keep this rejected until probing can return an immutable, copy-safe, budgeted snapshot
+        // with infeasible probes, target bounds, source reasons, and explicit completeness.
         throw std::invalid_argument(
           "probing diagnostics are not exposed safely by the current internal API");
       } else {
@@ -443,7 +454,15 @@ int main(int argc, char** argv)
 {
   try {
     const auto options = parse_options(argc, argv);
-    auto original      = cuopt::mathematical_optimization::io::read_mps<index_t, value_t>(
+
+    // RESEARCH-BREADCRUMB(mps-structure/safe-json-sidecar) [driver-local]
+    // Before reading or analyzing, reject an output equivalent to the input, including aliases.
+    // Commit a completed sidecar through a same-directory temporary file and atomic rename.
+
+    // RESEARCH-BREADCRUMB(mps-structure/run-manifest) [driver-local]
+    // Capture input identity, effective settings, statuses, timings, and build identity once here;
+    // pass that typed manifest to every renderer instead of reconstructing it during JSON output.
+    auto original = cuopt::mathematical_optimization::io::read_mps<index_t, value_t>(
       options.model_path, options.fixed_format);
     const auto original_analysis =
       structure::analyze_structure(original, "original", {}, options.analysis_level);
@@ -453,6 +472,9 @@ int main(int argc, char** argv)
     std::optional<structure::lp_overlay_summary_t> source_lp;
     std::optional<structure::lp_overlay_summary_t> objective_erased_lp;
     if (options.lp_overlay) {
+      // RESEARCH-BREADCRUMB(mps-structure/lp-structure-overlays) [driver-local]
+      // Make the requested stage explicit before adding a presolved LP overlay; comparisons must
+      // retain each stage's coordinate system and mapping completeness.
       structure::lp_overlay_options_t lp_options;
       source_lp = structure::analyze_root_lp_overlay(original, original_analysis, lp_options);
       structure::print_root_lp_overlay_summary(*source_lp);
