@@ -30,6 +30,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <queue>
 #include <string>
 
@@ -239,6 +240,33 @@ lp_status_t solve_linear_program_with_advanced_basis(
     raft::common::nvtx::range scope_scaling("DualSimplex::scaling");
     scaling(presolved_lp, settings, lp, column_scales, row_scales_simplex);
   }
+
+  // Normalize only exceptionally wide objective ranges. Multiplication by a
+  // positive scalar preserves the primal problem and its optimizers while
+  // keeping internal dual-feasibility comparisons on a useful scale.
+  f_t objective_scale = 1.0;
+  if (!settings.inside_mip) {
+    f_t min_abs_cost = std::numeric_limits<f_t>::max();
+    f_t max_abs_cost = 0.0;
+    for (i_t j = 0; j < lp.num_cols; ++j) {
+      const f_t abs_cost = std::abs(lp.objective[j]);
+      if (abs_cost > 0.0) {
+        min_abs_cost = std::min(min_abs_cost, abs_cost);
+        max_abs_cost = std::max(max_abs_cost, abs_cost);
+      }
+    }
+    if (min_abs_cost < std::numeric_limits<f_t>::max() && max_abs_cost / min_abs_cost > 1e6) {
+      objective_scale = f_t{1.0} / std::sqrt(min_abs_cost * max_abs_cost);
+      for (f_t& cost : lp.objective) {
+        cost *= objective_scale;
+      }
+      lp.obj_constant *= objective_scale;
+      settings.log.printf("Normalizing objective coefficient range [%.2e, %.2e] by %.2e.\n",
+                          min_abs_cost,
+                          max_abs_cost,
+                          objective_scale);
+    }
+  }
   assert(presolved_lp.num_cols == lp.num_cols);
   lp_problem_t<i_t, f_t> phase1_problem(original_lp.handle_ptr, 1, 1, 1);
   std::vector<variable_status_t> phase1_vstatus;
@@ -367,6 +395,17 @@ lp_status_t solve_linear_program_with_advanced_basis(
       *settings.concurrent_halt = 1;
     }
     if (status == dual_status_t::OPTIMAL) {
+      if (objective_scale != 1.0) {
+        solution.objective /= objective_scale;
+        solution.user_objective /= objective_scale;
+        solution.l2_dual_residual /= objective_scale;
+        for (f_t& value : solution.y) {
+          value /= objective_scale;
+        }
+        for (f_t& value : solution.z) {
+          value /= objective_scale;
+        }
+      }
       std::vector<f_t> unscaled_x(lp.num_cols);
       std::vector<f_t> unscaled_y(lp.num_rows);
       std::vector<f_t> unscaled_z(lp.num_cols);
