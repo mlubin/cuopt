@@ -3374,6 +3374,11 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
   bool stagnation_armed            = false;
   f_t armed_infeasibility          = primal_infeasibility_squared;
 
+  constexpr i_t zero_step_episode_trigger = 100;
+  constexpr i_t pricing_episode_length    = 256;
+  i_t consecutive_zero_steps              = 0;
+  i_t pricing_episode_remaining           = 0;
+
   while (iter < iter_limit) {
     PHASE2_NVTX_RANGE("DualSimplex::phase2_main_loop");
 
@@ -3385,7 +3390,7 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
     timers.start_timer(phase2_work_estimate + ft.work_estimate());
     {
       PHASE2_NVTX_RANGE("DualSimplex::pricing");
-      if (settings.use_steepest_edge_pricing) {
+      if (settings.use_steepest_edge_pricing && pricing_episode_remaining == 0) {
         leaving_index = phase2::steepest_edge_pricing_with_infeasibilities(lp,
                                                                            settings,
                                                                            x,
@@ -4249,7 +4254,16 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
 
     iter++;
 
-    const bool zero_step = step_length == 0.0;
+    const bool zero_step   = step_length == 0.0;
+    consecutive_zero_steps = zero_step ? consecutive_zero_steps + 1 : 0;
+    if (consecutive_zero_steps >= zero_step_episode_trigger && pricing_episode_remaining == 0) {
+      pricing_episode_remaining = pricing_episode_length;
+      consecutive_zero_steps    = 0;
+      settings.log.printf("Anti-cycling: using max-infeasibility pricing for %d pivots.\n",
+                          pricing_episode_length);
+    }
+    if (pricing_episode_remaining > 0) { --pricing_episode_remaining; }
+
     ++window_iterations;
     window_zero_steps += zero_step;
     best_window_infeasibility = std::min(best_window_infeasibility, primal_infeasibility_squared);
