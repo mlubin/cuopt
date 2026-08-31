@@ -20,39 +20,40 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_breakpoints(std::vector<i_t>&
                                                                std::vector<f_t>& ratios,
                                                                std::vector<f_t>& harris_ratios)
 {
-  i_t n                  = n_;
-  i_t m                  = m_;
   constexpr bool verbose = false;
   f_t pivot_tol          = settings_.pivot_tol;
   const f_t dual_tol     = settings_.dual_tol / 10;
+  const i_t nz           = delta_z_indices_.size();
 
-  i_t idx = 0;
-  while (idx == 0 && pivot_tol >= 1e-12) {
-    // Loop over the nonbasic variables j with non-zero delta_z
-    const i_t nz = delta_z_indices_.size();
+  // This path is normally a single pass. Relax the pivot threshold only when
+  // every candidate is tiny, stopping before it becomes numerically meaningless.
+  i_t count = 0;
+  while (count == 0 && pivot_tol > f_t{1e-12}) {
     for (i_t h = 0; h < nz; ++h) {
       const i_t j = delta_z_indices_[h];
       const i_t k = nonbasic_mark_[j];
       if (vstatus_[j] == variable_status_t::NONBASIC_FIXED) { continue; }
-      if (vstatus_[j] == variable_status_t::NONBASIC_LOWER && delta_z_[j] < -pivot_tol) {
-        indicies[idx]      = k;
-        ratios[idx]        = std::max((-z_[j]) / delta_z_[j], 0.0);
-        harris_ratios[idx] = std::max((-dual_tol - z_[j]) / delta_z_[j], 0.0);
-        if constexpr (verbose) { settings_.log.printf("ratios[%d] = %e\n", idx, ratios[idx]); }
-        idx++;
+
+      const f_t delta = delta_z_[j];
+      const f_t zj    = z_[j];
+      if (vstatus_[j] == variable_status_t::NONBASIC_LOWER && delta < -pivot_tol) {
+        indicies[count]      = k;
+        ratios[count]        = std::max(-zj / delta, f_t{0});
+        harris_ratios[count] = std::max((-dual_tol - zj) / delta, f_t{0});
+      } else if (vstatus_[j] == variable_status_t::NONBASIC_UPPER && delta > pivot_tol) {
+        indicies[count]      = k;
+        ratios[count]        = std::max(-zj / delta, f_t{0});
+        harris_ratios[count] = std::max((dual_tol - zj) / delta, f_t{0});
+      } else {
+        continue;
       }
-      if (vstatus_[j] == variable_status_t::NONBASIC_UPPER && delta_z_[j] > pivot_tol) {
-        indicies[idx]      = k;
-        ratios[idx]        = std::max((-z_[j]) / delta_z_[j], 0.0);
-        harris_ratios[idx] = std::max((dual_tol - z_[j]) / delta_z_[j], 0.0);
-        if constexpr (verbose) { settings_.log.printf("ratios[%d] = %e\n", idx, ratios[idx]); }
-        idx++;
-      }
+      if constexpr (verbose) { settings_.log.printf("ratios[%d] = %e\n", count, ratios[count]); }
+      ++count;
     }
-    work_estimate_ += 5 * nz + 5 * idx;
+    work_estimate_ += 5 * nz + 5 * count;
     pivot_tol /= 10;
   }
-  return idx;
+  return count;
 }
 
 template <typename i_t, typename f_t>
@@ -69,7 +70,6 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::single_pass(i_t start,
   f_t min_val    = inf;
   entering_index = -1;
   i_t candidate  = -1;
-  f_t zero_tol   = settings_.zero_tol;
   i_t k_idx      = -1;
   max_val        = 0.0;
 
@@ -127,8 +127,6 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
                                                                i_t& nonbasic_entering,
                                                                std::vector<i_t>& flip_indices)
 {
-  const i_t m            = m_;
-  const i_t n            = n_;
   const i_t nz           = delta_z_indices_.size();
   constexpr bool verbose = false;
   flip_indices.clear();
@@ -200,87 +198,61 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
       slope);
   }
 
-  // This code is complicated. There are several important concepts that are needed to understand
-  // it.
+  // This code combines bound flipping with Harris' ratio test. We want to take
+  // the longest useful dual step while:
+  //  1) remaining dual feasible up to a small tolerance,
+  //  2) increasing the dual objective, and
+  //  3) selecting a numerically stable pivot.
   //
-  // We are trying to compute the maximum step length we can take while:
-  //  1) Staying mostly dual feasible (we allow ourselves to be infeasible by dual_tol amount)
-  //  2) Increasing the dual objective
-  //  3) Selecting a variable with a large pivot (| delta_z[j] |)
+  // Along a dual step alpha, each candidate reduced cost is
   //
-  // Let alpha be the step length. For each nonbasic variable j, we have
-  // z_j(alpha) = z_j + alpha * delta_z_j
+  //   z_j(alpha) = z_j + alpha * delta_z_j.
   //
-  // To stay dual feasible, we either need to keep
-  //  z_j(alpha) >= 0, if j is on it's lower bound, or
-  //  z_j(alpha) <= 0, if j is on it's upper bound.
+  // A nonbasic at its lower bound is dual feasible when z_j(alpha) >= 0, and
+  // one at its upper bound is dual feasible when z_j(alpha) <= 0. Its exact
+  // breakpoint is therefore
   //
-  // Consider the equation z_j(alpha) = z_j + alpha * delta_z_j = 0. Each variable j puts a bound on
-  // alpha:
+  //   alpha_j = -z_j / delta_z_j.
   //
-  // alpha_j <= -z_j / delta_z_j, if x_j = l_j (z_j >= 0) and delta_z_j < 0
-  // alpha_j <= -z_j / delta_z_j, if x_j = u_j (z_j <= 0) and delta_z_j > 0
+  // A boxed variable may cross this breakpoint by flipping to its opposite
+  // bound. A one-sided variable cannot, so its breakpoint limits the step.
   //
-  // The code refers to these alpha_j as ratios, since they are the ratio of z_j to delta_z_j.
+  // The dual objective as a function of alpha is piecewise linear and concave.
+  // When a boxed variable crosses its breakpoint, the slope decreases by
   //
-  // Now we could take alpha = min_j alpha_j, and remain dual feasible. However, we are allowed to
-  // increase the step-length if j is a variable such that l_j <= x_j <= u_j. To see why imagine
-  // that our variable was currenlty on it's lower bound, with z_j > 0 and delta_z_j < 0, if we push
-  // alpha past alpha_j, than z_j(alpha) < 0. This is fine as long as we flip the variable to be on
-  // it's upper bound. Thus, we can push alpha past alpha_j for *bounded* variables.
+  //   |delta_z_j| * (upper_j - lower_j).
   //
-  // Note that this does not work if we try to increase alpha past alpha_j for a variable with a
-  // single bound. We would just be making ourselves dual infeasible. So we need to check whether a
-  // variable is bounded.
+  // We may keep increasing alpha through boxed breakpoints while the cumulative
+  // slope remains nonnegative. The first one-sided breakpoint, or the first
+  // group of boxed breakpoints that makes the slope negative, ends the useful
+  // range.
   //
-  // The dual objective as a function of the step-length alpha, is piecewise linear and concave. The
-  // breakpoints of this piecewise linear function occur at each of the alpha_j values. We can keep
-  // increasing the step-length as long as the slope remains nonnegative. After that we must stop,
-  // because we could decrease the dual objective. So the code tracks the cumulative slope of the
-  // dual objective.
+  // Harris' ratio test relaxes dual feasibility by eps = dual_tol / 10:
   //
-  // Now we don't need to exactly feasible: z_j >= 0 if x_j = l_j and z_j <= 0 if x_j = u_j. We can
-  // violate these bounds by the dual feasibility tolerance eps. We allow ourselves to be infeasible
-  // if it would help us get a larger pivot (delta_z_j). Small pivots can cause numerical issues, so
-  // we would like to avoid them.
+  //   z_j(alpha) >= -eps  for a variable at its lower bound,
+  //   z_j(alpha) <=  eps  for a variable at its upper bound.
   //
-  // With this tolerance we get the equations:
-  //  z_j(alpha) = z_j + alpha * delta_z_j >= -eps if x_j = l_j
-  //  z_j(alpha) = z_j + alpha * delta_z_j <= eps  if x_j = u_j
+  // These inequalities define the Harris ratios. They group nearly coincident
+  // breakpoints so that we can prefer a larger |delta_z_j| instead of being
+  // forced to use a weak pivot solely because its exact ratio is slightly
+  // smaller.
   //
-  // This gives bounds on alpha. We call these alpha_harris_j, for Paula Harris, who proposed this
-  // method.
+  // Sorting all breakpoints would cost O(num_breakpoints * log(num_breakpoints)).
+  // The coarse pass instead expands its threshold geometrically to limit the
+  // candidate set. This pass does not define the buckets. Bucket zero contains
+  // every exact ratio no greater than the minimum Harris ratio. Each subsequent
+  // bucket advances to the minimum Harris ratio among the remaining candidates
+  // and collects every exact ratio up to that boundary. This continues until
+  // the slope turns negative or a one-sided variable limits the step.
   //
-  // alpha_harris_j <= (-eps - z_j) / delta_z_j, if x_j = l_j and delta_z_j < 0
-  // alpha_harris_j <= (eps - z_j) / delta_z_j, if x_j = u_j and delta_z_j > 0
+  // Finally, search the admissible buckets from last to first. Within a bucket,
+  // choose the largest |delta_z_j| strictly above
   //
-  // Let alpha_harris = min_j alpha_harris_j. We can select the variable with the largest |
-  // delta_z_j | from those candidates { j | alpha_j <= alpha_harris }.
+  //   max(pivot_tol, min(0.1 * max_pivot, 1)).
   //
-  // We combine these two ideas (increasing the step length for bounded variables) and allowing
-  // ourselves to be slightly dual infeasible to choose a larger pivot.
-  //
-  // We partition the variables into buckets. Let B_k be the set of variables in bucket k. B_0 is
-  // defined as { j | alpha_j <= alpha_harris }. We then compute alpha_harris_1 = min_{j not in B_0}
-  // alpha_j. And B_1 is defined as { j not in B_0 | alpha_j <= alpha_harris_1 }. And so on.
-  //
-  // We want to balance two different things:
-  //  1) Taking a larger step length to increase the dual objective as much as possible,
-  //  2) Choosing a large pivot for numerical stability.
-  //
-  // Let max_pivot = max_j | delta_z_j |. We start working our way backward from the largest bucket
-  // to the smallest bucket, we choose a variable j that satisfies | delta_z_j | >= 0.1 * max_pivot.
-  // Since we can always choose a smaller step length for the sake of numerical stability.
-  //
-  // Now the final thing to understand is that the ratios alpha_j are not sorted in any particular
-  // order. And we don't want to pay the O(num_breakpoints * log(num_breakpoints)) cost of sorting
-  // them.
-  //
-  // So we set a threshold on the step-length and check if all variables j with alpha_j <= threshold
-  // have already caused the slope to go negative. If so, we just need to consider those candidate
-  // variables with alpha_j <= threshold. If not, we multiply the threshold by 10. This cost us
-  // O(log10(max_step_length/min_step_length) * num_breakpoints) time. So we aren't totally linear.
-  // But the hope is we are better than a sort.
+  // Break equal-pivot ties using the larger exact ratio. If no bucket contains
+  // an acceptable pivot, retain the initial minimum-Harris-ratio candidate.
+  // The final bound-flip set applies the dual_tol / 10 margin separately.
 
   // Use a coarse filter to find candidates
   f_t minimum_harris_ratio = step_length;
@@ -376,9 +348,7 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
         std::swap(candidates[h], candidates[write]);
         write++;
       } else {
-        const i_t j            = nonbasic_list_[indicies[k]];
-        const f_t harris_ratio = harris_ratios[k];
-        next_threshold         = std::min(next_threshold, harris_ratio);
+        next_threshold = std::min(next_threshold, harris_ratios[k]);
       }
     }
     work_estimate_ += 3 * (num_candidates - scan_start) + 9 * (write - scan_start);
@@ -404,19 +374,17 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
   }
   work_estimate_ += 4 * bucket_start[num_buckets];
 
-  // Harris' ratio test groups numerically indistinguishable breakpoints. Search
-  // the last admissible group first, then choose its strongest pivot to avoid
-  // long sequences of weak, zero-length pivots under dual degeneracy.
-  f_t pivot_threshold = std::max(settings_.pivot_tol, std::min(0.1 * max_pivot, 1.0));
+  // Search the last admissible Harris group first and choose its strongest
+  // pivot. Ratio-first selection causes weak, zero-length pivots under heavy
+  // dual degeneracy.
+  const f_t pivot_threshold =
+    std::max(settings_.pivot_tol, std::min(f_t{0.1} * max_pivot, f_t{1.0}));
   i_t entering_k      = -1;
-
-  // This is O(num_candidates)
-  for (i_t b = num_buckets - 1; b >= 0; b--) {
-    const i_t b_start = bucket_start[b];
-    const i_t b_end   = bucket_start[b + 1];
-    f_t best_pivot    = -1.0;
-    f_t best_ratio    = -1.0;
-    for (i_t h = b_start; h < b_end; h++) {
+  i_t selected_bucket = -1;
+  for (i_t b = num_buckets - 1; b >= 0; --b) {
+    f_t best_pivot = -1.0;
+    f_t best_ratio = -1.0;
+    for (i_t h = bucket_start[b]; h < bucket_start[b + 1]; ++h) {
       const i_t k     = candidates[h];
       const i_t j     = nonbasic_list_[indicies[k]];
       const f_t pivot = std::abs(delta_z_[j]);
@@ -427,8 +395,11 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
         entering_k = k;
       }
     }
-    work_estimate_ += 2 + 5 * (b_end - b_start);
-    if (entering_k >= 0) break;
+    work_estimate_ += 2 + 5 * (bucket_start[b + 1] - bucket_start[b]);
+    if (entering_k >= 0) {
+      selected_bucket = b;
+      break;
+    }
   }
 
   // Step = entering variable's breakpoint ratio
@@ -446,30 +417,10 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
   nonbasic_entering = indicies[entering_k];
   entering_index    = nonbasic_list_[nonbasic_entering];
 
-  // Record whether we selected the slope breaker
-  selected_is_slope_breaker_ = (entering_k == slope_breaker_k);
-
-  // Record which bucket was selected
-  used_fallback_ = false;
-  i_t pos        = -1;
-  for (i_t b = 0; b < num_buckets; b++) {
-    if (entering_k >= 0) {
-      // Find which bucket entering_k is in based on its position in candidates
-      pos = -1;
-      for (i_t h = 0; h < num_candidates; h++) {
-        if (candidates[h] == entering_k) {
-          pos = h;
-          break;
-        }
-      }
-      if (pos >= bucket_start[b] && pos < bucket_start[b + 1]) {
-        bucket_selected_ = b;
-        break;
-      }
-    }
-  }
-  work_estimate_ += (bucket_selected_ + 1) * (pos + 3);
-  step_length_result_ = step_length;
+  selected_is_slope_breaker_ = entering_k == slope_breaker_k;
+  used_fallback_             = false;
+  bucket_selected_           = selected_bucket;
+  step_length_result_        = step_length;
   determine_flips(step_length, entering_index, flip_indices);
 
   return entering_index;
