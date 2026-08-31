@@ -3354,6 +3354,10 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
   }
   i_t iterations_since_refactor = 0;
 
+  // Bound-flip sets are often large on wide, highly degenerate models. Keep
+  // their capacity across pivots instead of repeatedly allocating it.
+  std::vector<i_t> flip_indices;
+
   while (iter < iter_limit) {
     PHASE2_NVTX_RANGE("DualSimplex::phase2_main_loop");
 
@@ -3675,7 +3679,6 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
     f_t step_length;
     i_t entering_index          = -1;
     i_t nonbasic_entering_index = -1;
-    std::vector<i_t> flip_indices;
     const bool harris_ratio     = settings.use_harris_ratio;
     const bool bound_flip_ratio = settings.use_bound_flip_ratio;
     {
