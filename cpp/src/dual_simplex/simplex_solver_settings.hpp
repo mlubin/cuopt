@@ -88,7 +88,8 @@ struct simplex_solver_settings_t {
       check_Q(false),
       crossover(false),
       unscaled_max_abs_obj_coeff(-1.0),
-      refactor_frequency(100),
+      // Longer update sequences reduced refactorization overhead on difficult LPs.
+      refactor_frequency(250),
       iteration_log_frequency(1000),
       first_iteration_log(2),
       num_threads(omp_get_max_threads() - 1),
