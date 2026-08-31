@@ -147,7 +147,7 @@ void compute_delta_z(const csr_matrix_t<i_t, f_t>& Arow,
   for (i_t k = 0; k < nz_delta_y; k++) {
     const i_t i         = delta_y.i[k];
     const f_t delta_y_i = delta_y.x[k];
-    if (std::abs(delta_y_i) < 1e-12) { continue; }
+    if (std::abs(delta_y_i) < 1e-14) { continue; }
     const i_t row_start = Arow.row_start[i];
     const i_t row_end   = nonbasic_end[i] + 1;
     nnz_processed += row_end - row_start;
