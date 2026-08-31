@@ -456,7 +456,8 @@ void initial_perturbation(const lp_problem_t<i_t, f_t>& lp,
                           const simplex_solver_settings_t<i_t, f_t>& settings,
                           const std::vector<variable_status_t>& vstatus,
                           bool strongly_degenerate,
-                          std::vector<f_t>& objective)
+                          std::vector<f_t>& objective,
+                          f_t strength_multiplier = 1.0)
 {
   const i_t n           = lp.num_cols;
   f_t max_abs_obj_coeff = 0.0;
@@ -482,7 +483,8 @@ void initial_perturbation(const lp_problem_t<i_t, f_t>& lp,
   // are too small to separate reduced costs when a substantial part of the
   // nonbasic set is dual degenerate. Use a stronger, still temporary shift in
   // that case. The original costs are restored before declaring optimality.
-  const f_t perturbation_base = (strongly_degenerate ? 1e-5 : 5e-7) * max_abs_obj_coeff;
+  const f_t perturbation_base =
+    (strongly_degenerate ? 1e-5 : 5e-7) * max_abs_obj_coeff * strength_multiplier;
 
   settings.log.printf(
     "Perturbation debug: max_abs_obj_coeff=%e (dampened), perturbation_base=%e, n=%d, "
@@ -3358,6 +3360,20 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
   // their capacity across pivots instead of repeatedly allocating it.
   std::vector<i_t> flip_indices;
 
+  // Recovery is deliberately conservative. A high zero-step fraction may
+  // trigger after one window, while stalled infeasibility must persist across
+  // two windows. Re-apply the temporary cost perturbation at most three times.
+  constexpr i_t degeneracy_window  = 500;
+  constexpr f_t zero_step_trigger  = 0.30;
+  constexpr f_t stagnation_trigger = 0.05;
+  i_t window_iterations            = 0;
+  i_t window_zero_steps            = 0;
+  i_t reperturbation_count         = 0;
+  f_t window_start_infeasibility   = primal_infeasibility_squared;
+  f_t best_window_infeasibility    = primal_infeasibility_squared;
+  bool stagnation_armed            = false;
+  f_t armed_infeasibility          = primal_infeasibility_squared;
+
   while (iter < iter_limit) {
     PHASE2_NVTX_RANGE("DualSimplex::phase2_main_loop");
 
@@ -4232,6 +4248,60 @@ dual_status_t dual_phase2_with_advanced_basis(i_t phase,
 #endif
 
     iter++;
+
+    const bool zero_step = step_length == 0.0;
+    ++window_iterations;
+    window_zero_steps += zero_step;
+    best_window_infeasibility = std::min(best_window_infeasibility, primal_infeasibility_squared);
+    if (window_iterations >= degeneracy_window) {
+      const f_t zero_step_fraction = static_cast<f_t>(window_zero_steps) / window_iterations;
+      const bool window_stagnated =
+        primal_infeasibility_squared > settings.primal_tol * settings.primal_tol &&
+        best_window_infeasibility >= window_start_infeasibility * (f_t{1.0} - stagnation_trigger);
+
+      bool confirmed_stagnation = false;
+      if (!window_stagnated) {
+        stagnation_armed = false;
+      } else if (!stagnation_armed) {
+        stagnation_armed    = true;
+        armed_infeasibility = window_start_infeasibility;
+      } else if (best_window_infeasibility <
+                 armed_infeasibility * (f_t{1.0} - stagnation_trigger)) {
+        stagnation_armed = false;
+      } else {
+        confirmed_stagnation = true;
+      }
+
+      if (phase == 2 && settings.initial_perturbation != 0 &&
+          (zero_step_fraction > zero_step_trigger || confirmed_stagnation) &&
+          reperturbation_count < 3) {
+        ++reperturbation_count;
+        const f_t strength = std::pow(f_t{3.0}, reperturbation_count);
+        settings.log.printf(
+          "Degeneracy monitor: %.1f%% zero-step pivots%s over last %d iterations "
+          "(iter %d); re-perturbing objective (strength x%.0f, trigger #%d)\n",
+          100.0 * zero_step_fraction,
+          confirmed_stagnation ? " + confirmed infeasibility stagnation" : "",
+          window_iterations,
+          iter,
+          strength,
+          reperturbation_count);
+        phase2::initial_perturbation(
+          lp, settings, vstatus, /*strongly_degenerate=*/true, objective, strength);
+        for (i_t k = 0; k < m; ++k) {
+          c_basic[k] = objective[basic_list[k]];
+        }
+        phase2_work_estimate += 3 * m;
+        ft.b_transpose_solve(c_basic, y);
+        phase2::compute_reduced_costs(
+          objective, lp.A, y, basic_list, nonbasic_list, z, phase2_work_estimate);
+        stagnation_armed = false;
+      }
+      window_iterations          = 0;
+      window_zero_steps          = 0;
+      window_start_infeasibility = primal_infeasibility_squared;
+      best_window_infeasibility  = primal_infeasibility_squared;
+    }
 
     // Clear delta_z
     phase2_work_estimate += 3 * delta_z_indices.size();
