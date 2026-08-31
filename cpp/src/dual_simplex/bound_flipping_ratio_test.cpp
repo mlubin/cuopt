@@ -404,9 +404,9 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
   }
   work_estimate_ += 4 * bucket_start[num_buckets];
 
-  // Select the entering variable
-  // Scan from last bucket to first. Within each bucket, pick the variable with
-  // the largest ratio (step length) that has |delta_z| > pivot_threshold
+  // Harris' ratio test groups numerically indistinguishable breakpoints. Search
+  // the last admissible group first, then choose its strongest pivot to avoid
+  // long sequences of weak, zero-length pivots under dual degeneracy.
   f_t pivot_threshold = std::max(settings_.pivot_tol, std::min(0.1 * max_pivot, 1.0));
   i_t entering_k      = -1;
 
@@ -414,12 +414,15 @@ i_t bound_flipping_ratio_test_t<i_t, f_t>::compute_step_length(f_t& step_length,
   for (i_t b = num_buckets - 1; b >= 0; b--) {
     const i_t b_start = bucket_start[b];
     const i_t b_end   = bucket_start[b + 1];
+    f_t best_pivot    = -1.0;
     f_t best_ratio    = -1.0;
     for (i_t h = b_start; h < b_end; h++) {
       const i_t k     = candidates[h];
       const i_t j     = nonbasic_list_[indicies[k]];
       const f_t pivot = std::abs(delta_z_[j]);
-      if (pivot > pivot_threshold && ratios[k] > best_ratio) {
+      if (pivot > pivot_threshold &&
+          (pivot > best_pivot || (pivot == best_pivot && ratios[k] > best_ratio))) {
+        best_pivot = pivot;
         best_ratio = ratios[k];
         entering_k = k;
       }
