@@ -115,6 +115,11 @@ files:
     includes:
       - develop
       - py_version
+  async_lifetime_checks:
+    output: none
+    includes:
+      - async_lifetime_checks
+      - py_version
   docs:
     output: none
     includes:
@@ -1078,6 +1083,15 @@ dependencies:
               - *cudss_cu13
               - *nccl_cu13
               - *nvjitlink_cu13
+  async_lifetime_checks:
+    common:
+      - output_types: conda
+        packages:
+          - clang=23.1.4
+          - clangdev=23.1.4
+          - llvmdev=23.1.4
+          - cmake>=4.0
+          - ninja
   develop:
     common:
       - output_types: [conda, requirements]

@@ -1,0 +1,2784 @@
+{
+  "schema_version": 1,
+  "description": "Audited lifetime contracts for cuOpt. Argument indexes are zero-based explicit arguments; receivers are separate. Names identify semantic qualified declarations after template-argument and inline-namespace normalization. Unsupported entries are coverage diagnostics, never proof of safety.",
+  "schema": {
+    "effect": [
+      "async",
+      "synchronize",
+      "retain",
+      "state",
+      "allocate",
+      "deallocate",
+      "immediate",
+      "unsupported"
+    ],
+    "storage": {
+      "referent": "Storage of the referred object itself, not pointee data.",
+      "pointee": "Storage reached through a pointer argument.",
+      "container_data": "Backing allocation of an owning container or view; moving the handle does not kill storage."
+    },
+    "access": [
+      "read",
+      "write",
+      "read_write"
+    ],
+    "when": "arg_types maps argument index strings to pointer, arithmetic_or_enum, or record:<normalized qualified name>. Unsupported selectors must emit a coverage diagnostic.",
+    "stream": "Exactly one of arg, receiver, handle_arg, receiver_member, event_arg, or all. Event and handle streams require state resolution; absence of resolution is not completion.",
+    "success_return": "Synchronize effect applies only on a path where the CUDA call returned cudaSuccess; failures and not-ready queries do not retire borrows.",
+    "device_only": "Borrow is an allocation/stream-ordering contract, not a host stack-object lifetime contract.",
+    "retained_by": "Receiver, argument, returned owner, or output descriptor retains pointee storage; ordinary synchronization does not release the retained borrow.",
+    "min_args": "Count explicit AST call arguments, including synthesized default arguments; constructor selectors distinguish scalar/data/deep-copy overloads.",
+    "ownership": "Owned result may move. Device deallocation can safely follow same-stream uses without a host sync, but other-stream uses require dependencies."
+  },
+  "contracts": [
+    {
+      "name": "rmm::device_scalar::set_value_async",
+      "kind": "method",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "referent",
+          "access": "read"
+        }
+      ],
+      "min_args": 2,
+      "description": "RMM requires the host value to remain alive and unchanged through completion.",
+      "evidence": "rmm/device_scalar.hpp:176-208"
+    },
+    {
+      "name": "rmm::device_scalar",
+      "kind": "constructor",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "referent",
+          "access": "read"
+        }
+      ],
+      "min_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "arithmetic_or_enum"
+        }
+      },
+      "description": "Initial-value constructor delegates to set_value_async; allocation-only and device deep-copy overloads differ.",
+      "evidence": "rmm/device_scalar.hpp:112-125"
+    },
+    {
+      "name": "rmm::device_uvector::set_element_async",
+      "kind": "method",
+      "effect": "async",
+      "stream": {
+        "arg": 2
+      },
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "referent",
+          "access": "read"
+        }
+      ],
+      "min_args": 3,
+      "evidence": "rmm/device_uvector.hpp:185-226"
+    },
+    {
+      "name": "rmm::device_scalar::value",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "description": "Synchronizes the specified stream before returning; same-stream pending borrows complete."
+    },
+    {
+      "name": "rmm::device_uvector::element",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 1
+      },
+      "description": "Synchronizes the specified stream before returning; same-stream pending borrows complete."
+    },
+    {
+      "name": "rmm::device_uvector::front_element",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "description": "Synchronizes the specified stream before returning; same-stream pending borrows complete."
+    },
+    {
+      "name": "rmm::device_uvector::back_element",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "description": "Synchronizes the specified stream before returning; same-stream pending borrows complete."
+    },
+    {
+      "name": "rmm::device_uvector::set_element",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 2
+      },
+      "description": "Synchronizes the specified stream before returning; same-stream pending borrows complete."
+    },
+    {
+      "name": "rmm::device_scalar::set_value_to_zero_async",
+      "kind": "method",
+      "effect": "async",
+      "stream": {
+        "arg": 0
+      },
+      "borrows": [],
+      "description": "Memset takes its fill value by value and does not borrow a host source."
+    },
+    {
+      "name": "rmm::device_uvector::set_element_to_zero_async",
+      "kind": "method",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "borrows": [],
+      "description": "Memset takes its fill value by value and does not borrow a host source."
+    },
+    {
+      "name": "rmm::device_scalar",
+      "kind": "constructor",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:rmm::device_scalar"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "description": "Deep copy borrows device allocation. Stream-ordered destruction is allowed; a local owner alone is not an error.",
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned",
+        "deallocation": "stream_ordered"
+      }
+    },
+    {
+      "name": "rmm::device_uvector",
+      "kind": "constructor",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:rmm::device_uvector"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "description": "Deep copy borrows device allocation. Stream-ordered destruction is allowed; a local owner alone is not an error.",
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned",
+        "deallocation": "stream_ordered"
+      }
+    },
+    {
+      "name": "rmm::device_buffer",
+      "kind": "constructor",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:rmm::device_buffer"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "description": "Deep copy borrows device allocation. Stream-ordered destruction is allowed; a local owner alone is not an error.",
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned",
+        "deallocation": "stream_ordered"
+      }
+    },
+    {
+      "name": "rmm::device_scalar",
+      "kind": "constructor",
+      "effect": "allocate",
+      "stream": {
+        "arg": 0
+      },
+      "min_args": 1,
+      "max_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:cuda::stream_ref"
+        }
+      },
+      "borrows": [],
+      "ownership": {
+        "receiver": true,
+        "result": "owned",
+        "storage": "container_data",
+        "deallocation": "stream_ordered"
+      },
+      "description": "Allocates uninitialized device storage without borrowing a host initializer; size/alignment arguments are passed by value."
+    },
+    {
+      "name": "rmm::device_uvector",
+      "kind": "constructor",
+      "effect": "allocate",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "max_args": 3,
+      "when": {
+        "arg_types": {
+          "0": "arithmetic_or_enum"
+        }
+      },
+      "borrows": [],
+      "ownership": {
+        "receiver": true,
+        "result": "owned",
+        "storage": "container_data",
+        "deallocation": "stream_ordered"
+      },
+      "description": "Allocates uninitialized device storage without borrowing a host initializer; size/alignment arguments are passed by value."
+    },
+    {
+      "name": "rmm::device_buffer",
+      "kind": "constructor",
+      "effect": "allocate",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "max_args": 3,
+      "when": {
+        "arg_types": {
+          "0": "arithmetic_or_enum"
+        }
+      },
+      "borrows": [],
+      "ownership": {
+        "receiver": true,
+        "result": "owned",
+        "storage": "container_data",
+        "deallocation": "stream_ordered"
+      },
+      "description": "Allocates uninitialized device storage without borrowing a host initializer; size/alignment arguments are passed by value."
+    },
+    {
+      "name": "rmm::device_buffer",
+      "kind": "constructor",
+      "effect": "allocate",
+      "stream": {
+        "arg": 2
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "when": {
+        "arg_types": {
+          "0": "arithmetic_or_enum"
+        }
+      },
+      "borrows": [],
+      "ownership": {
+        "receiver": true,
+        "result": "owned",
+        "storage": "container_data",
+        "deallocation": "stream_ordered"
+      },
+      "description": "Allocates uninitialized device storage without borrowing a host initializer; size/alignment arguments are passed by value."
+    },
+    {
+      "name": "rmm::device_buffer",
+      "kind": "constructor",
+      "effect": "async",
+      "stream": {
+        "arg": 2
+      },
+      "min_args": 3,
+      "max_args": 4,
+      "when": {
+        "arg_types": {
+          "0": "pointer"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned"
+      },
+      "project_usage": "dependency_contract",
+      "description": "Copies raw host or device pointer without synchronizing; not currently a direct project call.",
+      "evidence": "rmm/device_buffer.hpp:124-169"
+    },
+    {
+      "name": "rmm::device_buffer",
+      "kind": "constructor",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 5,
+      "max_args": 5,
+      "when": {
+        "arg_types": {
+          "0": "pointer"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned"
+      },
+      "project_usage": "dependency_contract",
+      "description": "Copies raw host or device pointer without synchronizing; not currently a direct project call.",
+      "evidence": "rmm/device_buffer.hpp:124-169"
+    },
+    {
+      "name": "cudaMemcpyAsync",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 4
+      },
+      "min_args": 5,
+      "max_args": 5,
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "cudaMemcpy2DAsync",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 7
+      },
+      "min_args": 8,
+      "max_args": 8,
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "raft::copy",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "when": {
+        "arg_types": {
+          "0": "pointer",
+          "1": "pointer"
+        }
+      },
+      "evidence": "raft/util/cudart_utils.hpp:136-138",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "raft::update_device",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "project_usage": "dependency_contract",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "raft::update_host",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "project_usage": "used",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "raft::copy_async",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write",
+          "device_only": true
+        }
+      ],
+      "description": "Explicit device-to-device copy; model stream-ordered allocation lifetimes, not stack scalar borrowing. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "project_usage": "dependency_contract",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "raft::copy_matrix",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 6
+      },
+      "min_args": 7,
+      "max_args": 7,
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion. CUDA host completion varies with transfer direction and pageable/pinned memory; absent proof of completion, conservatively keep the borrow.",
+      "project_usage": "dependency_contract",
+      "runtime_contract": "cuda_memcpy_direction_and_memory_kind"
+    },
+    {
+      "name": "rmm::detail::memcpy_async",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "description": "Source may not change and destination may not be read, changed, or destroyed before completion."
+    },
+    {
+      "name": "cudaMemsetAsync",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 3
+      },
+      "min_args": 4,
+      "max_args": 4,
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "write",
+          "device_only": true
+        }
+      ],
+      "description": "Destination is asynchronously written; fill value is copied by value and is not a host borrow."
+    },
+    {
+      "name": "cuopt::device_copy",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "max_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:std::vector"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "read"
+        }
+      ],
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned",
+        "deallocation": "stream_ordered"
+      },
+      "description": "Generic host-vector overload; std::vector<bool> specialization performs an additional conversion and must be analyzed separately.",
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:188-192"
+    },
+    {
+      "name": "cuopt::device_copy",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 2
+      },
+      "min_args": 3,
+      "max_args": 3,
+      "when": {
+        "arg_types": {
+          "0": "record:rmm::device_uvector",
+          "1": "record:std::vector"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "container_data",
+          "access": "read"
+        },
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "write",
+          "device_only": true
+        }
+      ],
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:171-176"
+    },
+    {
+      "name": "cuopt::device_copy",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "max_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:rmm::device_uvector"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "ownership": {
+        "source": "borrowed",
+        "result": "owned",
+        "deallocation": "stream_ordered"
+      },
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:154-158"
+    },
+    {
+      "name": "cuopt::expand_device_copy",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 2
+      },
+      "min_args": 3,
+      "max_args": 3,
+      "when": {
+        "arg_types": {
+          "1": "record:std::vector"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": false
+        },
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "write",
+          "device_only": true
+        }
+      ],
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:283-297"
+    },
+    {
+      "name": "cuopt::expand_device_copy",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 2
+      },
+      "min_args": 3,
+      "max_args": 3,
+      "when": {
+        "arg_types": {
+          "1": "record:rmm::device_uvector"
+        }
+      },
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": true
+        },
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "write",
+          "device_only": true
+        }
+      ],
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:283-297"
+    },
+    {
+      "name": "cuopt::host_copy_async",
+      "kind": "function",
+      "effect": "async",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "max_args": 2,
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "container_data",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "return_borrow": {
+        "storage": "container_data",
+        "access": "write"
+      },
+      "description": "Returned host vector owns an incomplete destination. Moving ownership is safe; read/mutation/destruction waits for completion.",
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:67-71"
+    },
+    {
+      "name": "cuopt::host_copy",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 2
+      },
+      "min_args": 3,
+      "max_args": 3,
+      "when": {
+        "arg_types": {
+          "0": "pointer"
+        }
+      },
+      "requires": {
+        "nonnull_arg": 0
+      },
+      "description": "Null source returns an empty vector before synchronization; do not complete unrelated borrows on that path.",
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:57-63"
+    },
+    {
+      "name": "cuopt::host_copy",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 2,
+      "max_args": 2,
+      "requires": {
+        "nonnull_container_data_arg": 0
+      },
+      "description": "Ordinary vector/span overloads delegate to pointer overload; empty/null storage can return before synchronization.",
+      "evidence": "cpp/src/utilities/copy_helpers.hpp:109-113"
+    },
+    {
+      "name": "cuda::stream_ref::sync",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "receiver": true
+      },
+      "min_args": 0,
+      "description": "Complete pending work on this stream only."
+    },
+    {
+      "name": "cuda::stream_ref::wait",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "receiver": true
+      },
+      "min_args": 0,
+      "description": "Complete pending work on this stream only."
+    },
+    {
+      "name": "rmm::cuda_stream_view::synchronize",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "receiver": true
+      },
+      "min_args": 0,
+      "description": "Complete pending work on this stream only."
+    },
+    {
+      "name": "rmm::cuda_stream::synchronize",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "receiver": true
+      },
+      "min_args": 0,
+      "description": "Complete pending work on this stream only."
+    },
+    {
+      "name": "raft::handle_t::sync_stream",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "receiver_member": "get_stream"
+      },
+      "min_args": 0,
+      "max_args": 1,
+      "description": "Primary-stream overload; optional argument is source_location. Other streams in the pool are not completed."
+    },
+    {
+      "name": "raft::handle_t::sync_stream",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "min_args": 2,
+      "max_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:cuda::stream_ref"
+        }
+      },
+      "description": "Explicit-stream overload with default source_location argument; completes only the specified stream."
+    },
+    {
+      "name": "raft::device_resources::sync_stream",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "receiver_member": "get_stream"
+      },
+      "min_args": 0,
+      "max_args": 1,
+      "description": "Primary-stream overload; optional argument is source_location. Other streams in the pool are not completed."
+    },
+    {
+      "name": "raft::device_resources::sync_stream",
+      "kind": "method",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "min_args": 2,
+      "max_args": 2,
+      "when": {
+        "arg_types": {
+          "0": "record:cuda::stream_ref"
+        }
+      },
+      "description": "Explicit-stream overload with default source_location argument; completes only the specified stream."
+    },
+    {
+      "name": "raft::resource::sync_stream",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "handle_arg": 0
+      },
+      "min_args": 1,
+      "max_args": 2,
+      "description": "Primary-stream overload; optional second argument is source_location."
+    },
+    {
+      "name": "raft::resource::sync_stream",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 1
+      },
+      "min_args": 3,
+      "max_args": 3,
+      "description": "Explicit stream overload; third argument is source_location, including its default."
+    },
+    {
+      "name": "cudaStreamSynchronize",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "min_args": 1,
+      "max_args": 1,
+      "success_return": true
+    },
+    {
+      "name": "cudaDeviceSynchronize",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "all": true
+      },
+      "min_args": 0,
+      "max_args": 0,
+      "success_return": true,
+      "description": "Completes outstanding work on the current CUDA device, not retained descriptor/model ownership."
+    },
+    {
+      "name": "cudaStreamQuery",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "arg": 0
+      },
+      "success_return": true,
+      "description": "Discharge a borrow only on a path where cudaSuccess was returned."
+    },
+    {
+      "name": "cudaEventRecord",
+      "kind": "function",
+      "effect": "state",
+      "stream": {
+        "arg": 1
+      },
+      "state": {
+        "operation": "record_event",
+        "event_arg": 0
+      },
+      "description": "Snapshot pending work before the event; recording does not complete host borrows."
+    },
+    {
+      "name": "cudaEventRecordWithFlags",
+      "kind": "function",
+      "effect": "state",
+      "stream": {
+        "arg": 1
+      },
+      "state": {
+        "operation": "record_event",
+        "event_arg": 0
+      },
+      "description": "Snapshot pending work before the event; recording does not complete host borrows. External flags alter capture behavior."
+    },
+    {
+      "name": "cudaStreamWaitEvent",
+      "kind": "function",
+      "effect": "state",
+      "stream": {
+        "arg": 0
+      },
+      "state": {
+        "operation": "wait_event",
+        "event_arg": 1
+      },
+      "description": "Orders streams; waiting is not host completion. Subsequent successful synchronization may complete dependencies."
+    },
+    {
+      "name": "cudaEventSynchronize",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "event_arg": 0
+      },
+      "success_return": true,
+      "description": "Completes only work captured by the event's latest record; later submissions remain pending."
+    },
+    {
+      "name": "cudaEventQuery",
+      "kind": "function",
+      "effect": "synchronize",
+      "stream": {
+        "event_arg": 0
+      },
+      "success_return": true,
+      "description": "Completes only work captured by the event's latest record; later submissions remain pending."
+    },
+    {
+      "name": "cudaMallocAsync",
+      "kind": "function",
+      "effect": "allocate",
+      "stream": {
+        "arg": 2
+      },
+      "success_return": true,
+      "ownership": {
+        "out_arg": 0,
+        "storage": "pointee",
+        "deallocation": "stream_ordered"
+      }
+    },
+    {
+      "name": "cudaFreeAsync",
+      "kind": "function",
+      "effect": "deallocate",
+      "stream": {
+        "arg": 1
+      },
+      "success_return": true,
+      "ownership": {
+        "arg": 0,
+        "storage": "pointee",
+        "deallocation": "stream_ordered"
+      },
+      "description": "Safe only when all uses happen before deallocation, including dependencies from other streams."
+    },
+    {
+      "name": "cudaMallocHost",
+      "kind": "function",
+      "effect": "allocate",
+      "success_return": true,
+      "ownership": {
+        "out_arg": 0,
+        "storage": "pointee",
+        "deallocation": "immediate"
+      },
+      "description": "Allocates pinned host storage; output handle may be local while its pointee survives."
+    },
+    {
+      "name": "cudaFreeHost",
+      "kind": "function",
+      "effect": "deallocate",
+      "success_return": true,
+      "ownership": {
+        "arg": 0,
+        "storage": "pointee",
+        "deallocation": "immediate"
+      },
+      "description": "Host allocation must have no pending asynchronous readers or writers when released."
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_csr_constraint_matrix",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_objective_coefficients",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_constraint_bounds",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_variable_lower_bounds",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_variable_upper_bounds",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_variable_types",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_row_types",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_constraint_lower_bounds",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_constraint_upper_bounds",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_initial_primal_solution",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_initial_dual_solution",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::io::data_model_view_t::set_quadratic_objective_matrix",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Non-owning std::span view. Synchronizing a stream does not discharge retained storage.",
+      "evidence": "cpp/src/io/data_model_view.cpp"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_cost_matrix",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_transit_time_matrix",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_initial_solutions",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 3,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_order_locations",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_break_locations",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_break_dimension",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_vehicle_break",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_vehicle_distance_break",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_objective_function",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_vehicle_time_windows",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_vehicle_locations",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_vehicle_types",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_pickup_delivery_pairs",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_drop_return_trips",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_skip_first_trips",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_order_service_times",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_vehicle_order_match",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_order_vehicle_match",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::add_capacity_dimension",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_order_time_windows",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_order_prizes",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_vehicle_max_costs",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_vehicle_fixed_costs",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::routing::data_model_view_t::set_vehicle_max_times",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "until_last_use_or_replacement",
+      "description": "Routing data model stores borrowed pointers/spans; validation or stream synchronization does not transfer ownership.",
+      "evidence": "cpp/src/routing/data_model_view.cu"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::mip_solver_settings_t::set_mip_callback",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read_write"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "through_callbacks_and_last_use",
+      "description": "Settings retain the callback pointer; callback retains user_data. Neither pointer is owned.",
+      "evidence": "cpp/src/mip_heuristics/solver_settings.cpp:27-32"
+    },
+    {
+      "name": "cuopt::mathematical_optimization::solver_settings_t::set_mip_callback",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read_write"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "through_callbacks_and_last_use",
+      "description": "Settings retain the callback pointer; callback retains user_data. Neither pointer is owned.",
+      "evidence": "cpp/src/mip_heuristics/solver_settings.cpp:27-32"
+    },
+    {
+      "name": "cuopt::internals::base_solution_callback_t::set_user_data",
+      "kind": "method",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 0,
+          "storage": "pointee",
+          "access": "read_write"
+        }
+      ],
+      "retained_by": {
+        "receiver": true
+      },
+      "lifetime": "through_callbacks_and_last_use",
+      "evidence": "cpp/include/cuopt/mathematical_optimization/utilities/internals.hpp:35"
+    },
+    {
+      "name": "cublasSetPointerMode_v2",
+      "kind": "function",
+      "effect": "state",
+      "state": {
+        "operation": "set_pointer_mode",
+        "family": "cublas",
+        "handle_arg": 0,
+        "mode_arg": 1
+      }
+    },
+    {
+      "name": "cublasSetPointerMode",
+      "kind": "function",
+      "effect": "state",
+      "state": {
+        "operation": "set_pointer_mode",
+        "family": "cublas",
+        "handle_arg": 0,
+        "mode_arg": 1
+      }
+    },
+    {
+      "name": "cusparseSetPointerMode",
+      "kind": "function",
+      "effect": "state",
+      "state": {
+        "operation": "set_pointer_mode",
+        "family": "cusparse",
+        "handle_arg": 0,
+        "mode_arg": 1
+      }
+    },
+    {
+      "name": "raft::linalg::detail::cublassetpointermode",
+      "kind": "function",
+      "effect": "state",
+      "state": {
+        "operation": "set_pointer_mode",
+        "family": "cublas",
+        "handle_arg": 0,
+        "mode_arg": 1
+      },
+      "stream": {
+        "arg": 2
+      }
+    },
+    {
+      "name": "raft::sparse::detail::cusparsesetpointermode",
+      "kind": "function",
+      "effect": "state",
+      "state": {
+        "operation": "set_pointer_mode",
+        "family": "cusparse",
+        "handle_arg": 0,
+        "mode_arg": 1
+      },
+      "stream": {
+        "arg": 2
+      }
+    },
+    {
+      "name": "cublasSetStream_v2",
+      "kind": "function",
+      "effect": "state",
+      "stream": {
+        "arg": 1
+      },
+      "state": {
+        "operation": "set_handle_stream",
+        "family": "cublas",
+        "handle_arg": 0
+      }
+    },
+    {
+      "name": "cublasSetStream",
+      "kind": "function",
+      "effect": "state",
+      "stream": {
+        "arg": 1
+      },
+      "state": {
+        "operation": "set_handle_stream",
+        "family": "cublas",
+        "handle_arg": 0
+      }
+    },
+    {
+      "name": "cusparseSetStream",
+      "kind": "function",
+      "effect": "state",
+      "stream": {
+        "arg": 1
+      },
+      "state": {
+        "operation": "set_handle_stream",
+        "family": "cusparse",
+        "handle_arg": 0
+      }
+    },
+    {
+      "name": "cusparseCreateCsr",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "out_arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "cusparseCreateDnVec",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "out_arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "cusparseCreateDnMat",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "out_arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "raft::sparse::detail::cusparsecreatecsr",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "out_arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "raft::sparse::detail::cusparsecreatednvec",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "out_arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "raft::sparse::detail::cusparsecreatednmat",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "out_arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "cusparseCsrSetPointers",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 3,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "cusparseDnVecSetValues",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    },
+    {
+      "name": "cusparseDnMatSetValues",
+      "kind": "function",
+      "effect": "retain",
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "retained_by": {
+        "arg": 0
+      },
+      "lifetime": "through_descriptor_last_use_and_inflight_operations",
+      "description": "Descriptor stores device pointers without copying allocation contents. Descriptor destruction alone does not complete in-flight work."
+    }
+  ],
+  "unsupported": [
+    {
+      "name": "raft::copy",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "mdspan overload requires layout/memory-type dispatch; host-only copies are immediate while device paths are stream-ordered.",
+      "min_args": 3,
+      "max_args": 3,
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 1,
+          "storage": "container_data",
+          "access": "write"
+        },
+        {
+          "arg": 2,
+          "storage": "container_data",
+          "access": "read"
+        }
+      ]
+    },
+    {
+      "name": "raft::linalg::detail::cublasdot",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Scalar result is ready on return in host pointer mode, asynchronous in device mode; requires resolved handle pointer mode.",
+      "stream": {
+        "arg": 7
+      },
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        },
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "result_mode": "host_synchronous_device_async"
+      }
+    },
+    {
+      "name": "raft::linalg::detail::cublasnrm2",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Scalar result is ready on return in host pointer mode, asynchronous in device mode; requires resolved handle pointer mode.",
+      "stream": {
+        "arg": 5
+      },
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "result_mode": "host_synchronous_device_async"
+      }
+    },
+    {
+      "name": "cublasDotEx",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Scalar result is ready on return in host pointer mode, asynchronous in device mode; requires resolved handle pointer mode.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        },
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 8,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "result_mode": "host_synchronous_device_async"
+      }
+    },
+    {
+      "name": "cublasSnrm2_v2",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Scalar result is ready on return in host pointer mode, asynchronous in device mode; requires resolved handle pointer mode.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "result_mode": "host_synchronous_device_async"
+      }
+    },
+    {
+      "name": "cublasDnrm2_v2",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Scalar result is ready on return in host pointer mode, asynchronous in device mode; requires resolved handle pointer mode.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 4,
+          "storage": "pointee",
+          "access": "write"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "result_mode": "host_synchronous_device_async"
+      }
+    },
+    {
+      "name": "cublasSgeam",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires handle pointer mode and stream plus descriptor-referenced allocation lifetimes; host scalar input may be consumed immediately.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 9,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 11,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 8,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "input_mode": "host_immediate_device_async"
+      }
+    },
+    {
+      "name": "cublasDgeam",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires handle pointer mode and stream plus descriptor-referenced allocation lifetimes; host scalar input may be consumed immediately.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 9,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        },
+        {
+          "arg": 11,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 8,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "state": {
+        "family": "cublas",
+        "handle_arg": 0,
+        "input_mode": "host_immediate_device_async"
+      }
+    },
+    {
+      "name": "raft::sparse::detail::cusparsespmv",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires handle pointer mode and stream plus descriptor-referenced allocation lifetimes; host scalar input may be consumed immediately.",
+      "stream": {
+        "arg": 9
+      },
+      "borrows": [
+        {
+          "arg": 8,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "state": {
+        "family": "cusparse",
+        "handle_arg": 0,
+        "input_mode": "host_immediate_device_async"
+      }
+    },
+    {
+      "name": "cusparseSpMV",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires handle pointer mode and stream plus descriptor-referenced allocation lifetimes; host scalar input may be consumed immediately.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 9,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 2,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 5,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "state": {
+        "family": "cusparse",
+        "handle_arg": 0,
+        "input_mode": "host_immediate_device_async"
+      }
+    },
+    {
+      "name": "raft::sparse::detail::cusparsespmm",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires handle pointer mode and stream plus descriptor-referenced allocation lifetimes; host scalar input may be consumed immediately.",
+      "stream": {
+        "arg": 10
+      },
+      "borrows": [
+        {
+          "arg": 9,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 3,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "state": {
+        "family": "cusparse",
+        "handle_arg": 0,
+        "input_mode": "host_immediate_device_async"
+      }
+    },
+    {
+      "name": "cusparseSpMM",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires handle pointer mode and stream plus descriptor-referenced allocation lifetimes; host scalar input may be consumed immediately.",
+      "stream": {
+        "handle_arg": 0
+      },
+      "borrows": [
+        {
+          "arg": 10,
+          "storage": "pointee",
+          "access": "read_write",
+          "device_only": true
+        }
+      ],
+      "mode_dependent_borrows": [
+        {
+          "arg": 3,
+          "storage": "pointee",
+          "access": "read"
+        },
+        {
+          "arg": 6,
+          "storage": "pointee",
+          "access": "read"
+        }
+      ],
+      "state": {
+        "family": "cusparse",
+        "handle_arg": 0,
+        "input_mode": "host_immediate_device_async"
+      }
+    },
+    {
+      "name": "cudaStreamBeginCapture",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaStreamEndCapture",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphCreate",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphAddDependencies",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphAddKernelNode",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphExecUpdate",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphAddMemcpyNode",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphAddMemcpyNode1D",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphMemcpyNodeSetParams",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphExecMemcpyNodeSetParams",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphLaunch",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphInstantiate",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphInstantiateWithFlags",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphDestroy",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaGraphExecDestroy",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Graph capture/replay can retain pointers until the graph's last execution completes; capture-stream synchronization alone is insufficient.",
+      "state": {
+        "operation": "graph_lifetime"
+      }
+    },
+    {
+      "name": "cudaLaunchHostFunc",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Callback user_data remains borrowed until callback execution completes; callback captures and cross-stream uses require analysis."
+    },
+    {
+      "name": "cudaStreamAddCallback",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Callback user_data remains borrowed until callback execution completes; callback captures and cross-stream uses require analysis."
+    },
+    {
+      "name": "cudaLaunchKernel",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Kernel launch parameter values are copied, but kernel pointer arguments borrow the pointees through device completion; unpack the kernel argument vector.",
+      "stream": {
+        "arg": 5
+      }
+    },
+    {
+      "name": "cudaLaunchCooperativeKernel",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Kernel launch parameter values are copied, but kernel pointer arguments borrow the pointees through device completion; unpack the kernel argument vector.",
+      "stream": {
+        "arg": 5
+      }
+    },
+    {
+      "name": "cudaMemcpy",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Host/device direction determines synchronization; a synchronous name alone does not complete arbitrary stream work or all device-to-device storage uses."
+    },
+    {
+      "name": "cusparseSpGEMM_workEstimation",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires phase-specific scalar, workspace, descriptor, handle stream, and retention summaries; not assumed safe."
+    },
+    {
+      "name": "cusparseSpGEMM_estimateMemory",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires phase-specific scalar, workspace, descriptor, handle stream, and retention summaries; not assumed safe."
+    },
+    {
+      "name": "cusparseSpGEMM_compute",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires phase-specific scalar, workspace, descriptor, handle stream, and retention summaries; not assumed safe."
+    },
+    {
+      "name": "cusparseSpGEMM_copy",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires phase-specific scalar, workspace, descriptor, handle stream, and retention summaries; not assumed safe."
+    },
+    {
+      "name": "cusparseSpMM_preprocess",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires phase-specific scalar, workspace, descriptor, handle stream, and retention summaries; not assumed safe."
+    },
+    {
+      "name": "cusparseXcsrsort",
+      "kind": "function",
+      "effect": "unsupported",
+      "reason": "Requires phase-specific scalar, workspace, descriptor, handle stream, and retention summaries; not assumed safe."
+    }
+  ]
+}
